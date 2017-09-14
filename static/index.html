@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Mediasource Demo</title>
+</head>
+<body>
+    <video width="960px" height="540px" controls></video>
+    <input id="file-input" type="file" />
+</body>
+<script type="text/javascript">
+    let torrentSrcUrl;
+
+    function fetchBuffer (url, start, end) {
+        return new Promise(function(resolve, reject) {
+            var xhr = new XMLHttpRequest;
+            xhr.open('get', url);
+            xhr.responseType = 'arraybuffer';
+            xhr.setRequestHeader("Range", "bytes=" + start + "-" + end);
+            xhr.onload = function () {
+                resolve(xhr.response);
+            };
+            xhr.send();
+        });
+    };
+
+    function appendBuffer(sourceBuffer, buffer) {
+        return new Promise(function(resolve, reject) {
+            sourceBuffer.addEventListener('updateend', function () {
+                resolve();
+            });
+
+            sourceBuffer.appendBuffer(buffer);
+        });
+    }
+
+    function fetchManifest(url) {
+        return new Promise(function(resolve, reject) {
+            var xhr = new XMLHttpRequest;
+            xhr.open('get', url);
+            xhr.onload = function () {
+                resolve(JSON.parse(xhr.response));
+            };
+            xhr.send();
+        });
+    }
+
+    function fetchAndAppend(url, sourceBuffer, startRange, endRange) {
+        return new Promise((resolve, reject) => {
+            fetchBuffer(url, startRange, endRange).then(appendBuffer.bind(null, sourceBuffer)).then(() =>{
+                resolve();
+            });
+        });
+    }
+
+    function initiateFetchChain(manifestUrl, sourceUrl, sourceBuffer, startIndex, endIndex) {
+        return new Promise((resolve, reject) => {
+            fetchManifest(manifestUrl).then((manifest) => {
+                var fetchAndAppendPromises = [ fetchAndAppend.bind(null, sourceUrl, sourceBuffer, 0, manifest[0].Start - 1) ];
+                for (var i = startIndex; i < endIndex; i++) {
+                    fetchAndAppendPromises.push(fetchAndAppend.bind(null, sourceUrl, sourceBuffer, manifest[i].Start, manifest[i].End));
+                }
+
+                fetchAndAppendPromises.reduce(function(cur, next) {
+                    return cur.then(next);
+                }, Promise.resolve()).then(function() {
+                    resolve();
+                });
+            });
+        });
+    }
+
+    function onMediaSourceOpen() {
+        var mediaSource = this;
+        var sourceBuffer = mediaSource.addSourceBuffer(`video/mp4; codecs="avc1.64001E, mp4a.40.2"`);
+        mediaSource.duration = 1331;
+        initiateFetchChain('/out1.json', torrentSrcUrl, sourceBuffer, 0, 10);
+    }
+
+    function initPlayback() {
+        var mediaSource = new MediaSource();
+        var video = document.querySelector('video');
+        video.src = URL.createObjectURL(mediaSource);
+
+
+        mediaSource.addEventListener('sourceopen', onMediaSourceOpen);
+    }
+
+    function postTorrentFile(f) {
+        return new Promise((resolve, reject) => {
+            let xhr = new XMLHttpRequest();
+            xhr.open('post', "http://localhost:8012/torrent");
+            xhr.onload = () => {
+                if (xhr.status != 200) {
+                    reject()
+                }
+
+                const infoHash = JSON.parse(xhr.response).infoHash;
+                console.log('resolving', infoHash);
+                resolve(infoHash);
+            }
+            xhr.send(f);
+        });
+    }
+
+    function onFileInputChange(e) {
+        let f = e.target.files[0];
+        postTorrentFile(f).then((infoHash) => {
+            torrentSrcUrl = `http://localhost:8012/torrent/${infoHash}`;
+            initPlayback();
+        });
+    }
+
+    let file = document.getElementById('file-input');
+    file.addEventListener('change', onFileInputChange)
+
+</script>
+</html>

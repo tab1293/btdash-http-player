@@ -9,8 +9,12 @@
     <video width="960px" height="540px" controls></video>
     <input id="file-input" type="file" />
 </body>
+<script type="text/javascript" src="/segmentFetcher.js"></script>
 <script type="text/javascript">
-    let torrentSrcUrl;
+    let torrentHash;
+    let bufferFull = false;
+
+    var video = document.querySelector('video');
 
     function fetchBuffer (url, start, end) {
         return new Promise(function(resolve, reject) {
@@ -31,7 +35,12 @@
                 resolve();
             });
 
-            sourceBuffer.appendBuffer(buffer);
+            try {
+                sourceBuffer.appendBuffer(buffer);
+            }
+            catch (e) {
+                console.log('appendbuffer error', e);
+            }
         });
     }
 
@@ -54,12 +63,16 @@
         });
     }
 
-    function initiateFetchChain(manifestUrl, sourceUrl, sourceBuffer, startIndex, endIndex) {
+    function initiateFetchChain(manifestUrl, sourceUrl, sourceBuffer, startIndex=0 , endIndex=-1) {
         return new Promise((resolve, reject) => {
-            fetchManifest(manifestUrl).then((manifest) => {
-                var fetchAndAppendPromises = [ fetchAndAppend.bind(null, sourceUrl, sourceBuffer, 0, manifest[0].Start - 1) ];
+            fetchManifest(manifestUrl).then((segments) => {
+                if (endIndex == -1) {
+                    endIndex = segments.length
+                }
+
+                var fetchAndAppendPromises = [ fetchAndAppend.bind(null, sourceUrl, sourceBuffer, 0, segments[0].Start - 1) ];
                 for (var i = startIndex; i < endIndex; i++) {
-                    fetchAndAppendPromises.push(fetchAndAppend.bind(null, sourceUrl, sourceBuffer, manifest[i].Start, manifest[i].End));
+                    fetchAndAppendPromises.push(fetchAndAppend.bind(null, sourceUrl, sourceBuffer, segments[i].Start, segments[i].End));
                 }
 
                 fetchAndAppendPromises.reduce(function(cur, next) {
@@ -74,13 +87,15 @@
     function onMediaSourceOpen() {
         var mediaSource = this;
         var sourceBuffer = mediaSource.addSourceBuffer(`video/mp4; codecs="avc1.64001E, mp4a.40.2"`);
+        sourceBuffer.onerror = (e) => {
+            console.log('source buffer error', e);
+        }
         mediaSource.duration = 1331;
-        initiateFetchChain('/out1.json', torrentSrcUrl, sourceBuffer, 0, 10);
+        initiateFetchChain(`/torrent/${torrentHash}/segments`, `/torrent/${torrentHash}/data`, sourceBuffer);
     }
 
     function initPlayback() {
         var mediaSource = new MediaSource();
-        var video = document.querySelector('video');
         video.src = URL.createObjectURL(mediaSource);
 
 
@@ -107,7 +122,7 @@
     function onFileInputChange(e) {
         let f = e.target.files[0];
         postTorrentFile(f).then((infoHash) => {
-            torrentSrcUrl = `http://localhost:8012/torrent/${infoHash}`;
+            torrentHash = infoHash;
             initPlayback();
         });
     }

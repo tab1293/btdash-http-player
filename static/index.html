@@ -11,87 +11,43 @@
 </body>
 <script type="text/javascript" src="/segmentFetcher.js"></script>
 <script type="text/javascript">
+    let video = document.querySelector('video');
+    let sourceBuffer;
     let torrentHash;
-    let bufferFull = false;
+    let segmentFetcher;
 
-    var video = document.querySelector('video');
-
-    function fetchBuffer (url, start, end) {
-        return new Promise(function(resolve, reject) {
-            var xhr = new XMLHttpRequest;
-            xhr.open('get', url);
-            xhr.responseType = 'arraybuffer';
-            xhr.setRequestHeader("Range", "bytes=" + start + "-" + end);
-            xhr.onload = function () {
-                resolve(xhr.response);
-            };
-            xhr.send();
-        });
-    };
-
-    function appendBuffer(sourceBuffer, buffer) {
-        return new Promise(function(resolve, reject) {
-            sourceBuffer.addEventListener('updateend', function () {
-                resolve();
-            });
-
-            try {
-                sourceBuffer.appendBuffer(buffer);
+    function getCurrentBufferedIndex() {
+        for (let i=0; i<video.buffered.length; i++) {
+            if (video.currentTime >= video.buffered.start(i) && video.currentTime <= video.buffered.end(i)) {
+                return i;
             }
-            catch (e) {
-                console.log('appendbuffer error', e);
-            }
-        });
+        }
+
+        console.error('Returning -1 for buffered index');
+        return -1;
     }
 
-    function fetchManifest(url) {
-        return new Promise(function(resolve, reject) {
-            var xhr = new XMLHttpRequest;
-            xhr.open('get', url);
-            xhr.onload = function () {
-                resolve(JSON.parse(xhr.response));
-            };
-            xhr.send();
-        });
-    }
-
-    function fetchAndAppend(url, sourceBuffer, startRange, endRange) {
-        return new Promise((resolve, reject) => {
-            fetchBuffer(url, startRange, endRange).then(appendBuffer.bind(null, sourceBuffer)).then(() =>{
-                resolve();
-            });
-        });
-    }
-
-    function initiateFetchChain(manifestUrl, sourceUrl, sourceBuffer, startIndex=0 , endIndex=-1) {
-        return new Promise((resolve, reject) => {
-            fetchManifest(manifestUrl).then((segments) => {
-                if (endIndex == -1) {
-                    endIndex = segments.length
-                }
-
-                var fetchAndAppendPromises = [ fetchAndAppend.bind(null, sourceUrl, sourceBuffer, 0, segments[0].Start - 1) ];
-                for (var i = startIndex; i < endIndex; i++) {
-                    fetchAndAppendPromises.push(fetchAndAppend.bind(null, sourceUrl, sourceBuffer, segments[i].Start, segments[i].End));
-                }
-
-                fetchAndAppendPromises.reduce(function(cur, next) {
-                    return cur.then(next);
-                }, Promise.resolve()).then(function() {
-                    resolve();
-                });
-            });
-        });
+    video.ontimeupdate = (e) => {
+        const bufferTime = video.buffered.end(getCurrentBufferedIndex) - video.currentTime;
+        if (segmentFetcher.isHalted() && bufferTime <= 60) {
+            sourceBuffer.remove(0, video.currentTime - 6);
+            segmentFetcher.unhalt();
+        }
     }
 
     function onMediaSourceOpen() {
         var mediaSource = this;
-        var sourceBuffer = mediaSource.addSourceBuffer(`video/mp4; codecs="avc1.64001E, mp4a.40.2"`);
+        sourceBuffer = mediaSource.addSourceBuffer(`video/mp4; codecs="avc1.64001E, mp4a.40.2"`);
         sourceBuffer.onerror = (e) => {
             console.log('source buffer error', e);
         }
         mediaSource.duration = 1331;
-        initiateFetchChain(`/torrent/${torrentHash}/segments`, `/torrent/${torrentHash}/data`, sourceBuffer);
+
+
+        segmentFetcher = new SegmentFetcher(`/torrent/${torrentHash}/segments`, `/torrent/${torrentHash}/data`, sourceBuffer);
+        segmentFetcher.init().then(() => {
+            segmentFetcher.process();
+        });
     }
 
     function initPlayback() {

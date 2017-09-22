@@ -1,6 +1,7 @@
 class SegmentFetcher {
-    constructor(manifestUrl, sourceUrl, sourceBuffer) {
-        this.manifestUrl = manifestUrl;
+    constructor(manifest, sourceUrl, sourceBuffer) {
+        this.manifest = manifest;
+        this.segments = manifest.Segments;
         this.sourceUrl = sourceUrl;
         this.sourceBuffer = sourceBuffer;
 
@@ -9,7 +10,6 @@ class SegmentFetcher {
 
     reset() {
         this.currentIndex = -1;
-        this.segments = null;
         this.fetchQueue = [];
         this.halted = false;
     }
@@ -134,20 +134,11 @@ class SegmentFetcher {
     }
 
     init(startIndex=0, endIndex=3) {
-        return new Promise((resolve, reject) => {
-            this.fetchManifest(this.manifestUrl).then((segments) => {
-                this.segments = segments
+        this.queueNextSegmentFetch()
 
-                // Init segment load
-                this.queueNextSegmentFetch()
-
-                this.currentIndex = startIndex;
-                for (var i = this.currentIndex; i < endIndex; i++) {
-                    this.queueNextSegmentFetch()
-                }
-
-                resolve();
-            });
-        });
+        this.currentIndex = startIndex;
+        for (var i = this.currentIndex; i < endIndex; i++) {
+            this.queueNextSegmentFetch()
+        }
     }
 }

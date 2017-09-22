@@ -25,6 +25,12 @@ type Segment struct {
 	EndTime   int64 `bencode:"end_time"`
 }
 
+type Manifest struct {
+	Duration int64
+	Bitrate  int64
+	Segments []Segment
+}
+
 type MetaInfo struct {
 	Info         InfoDict
 	InfoHash     string
@@ -35,7 +41,7 @@ type MetaInfo struct {
 	CreatedBy    string `bencode:"created by"`
 	Encoding     string
 
-	Segments []Segment
+	Manifest Manifest
 }
 
 type FileDict struct {
@@ -57,14 +63,14 @@ type InfoDict struct {
 }
 
 type TorrentService struct {
-	client     *torrent.Client
-	segmentMap map[string][]Segment
+	client      *torrent.Client
+	manifestMap map[string]Manifest
 }
 
 func NewTorrentService(c *torrent.Client) *TorrentService {
 	var ts TorrentService
 	ts.client = c
-	ts.segmentMap = make(map[string][]Segment)
+	ts.manifestMap = make(map[string]Manifest)
 
 	return &ts
 }
@@ -139,7 +145,7 @@ func PostTorrentHandler(c echo.Context) error {
 		return c.String(500, fmt.Sprintf("Erroring adding torrent %s", mi.HashInfoBytes().HexString()))
 	}
 
-	ts.segmentMap[h] = m.Segments
+	ts.manifestMap[h] = m.Manifest
 
 	torrentBar(t)
 	<-t.GotInfo()
@@ -200,13 +206,13 @@ func GetTorrentInfoHandler(c echo.Context) error {
 	return c.Blob(200, "application/x-bittorrent", b.Bytes())
 }
 
-func GetTorrentSegmentsHandler(c echo.Context) error {
+func GetTorrentManifestHandler(c echo.Context) error {
 	infoHash := c.Param("infohash")
 
 	ts := c.Get("TorrentService").(*TorrentService)
-	segments := ts.segmentMap[infoHash]
+	manifest := ts.manifestMap[infoHash]
 
-	return c.JSON(200, segments)
+	return c.JSON(200, manifest)
 
 }
 
@@ -229,7 +235,7 @@ func main() {
 
 	e.GET("/torrent/:infohash/data", GetTorrentHandler)
 	e.GET("/torrent/:infohash/info", GetTorrentInfoHandler)
-	e.GET("/torrent/:infohash/segments", GetTorrentSegmentsHandler)
+	e.GET("/torrent/:infohash/manifest", GetTorrentManifestHandler)
 	e.POST("/torrent", PostTorrentHandler)
 	e.Logger.Fatal(e.Start(":8012"))
 }

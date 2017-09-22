@@ -45,6 +45,17 @@
         }
     }
 
+    function fetchManifest(url) {
+        return new Promise(function(resolve, reject) {
+            var xhr = new XMLHttpRequest;
+            xhr.open('get', url);
+            xhr.onload = function () {
+                resolve(JSON.parse(xhr.response));
+            };
+            xhr.send();
+        });
+    }
+
     function onMediaSourceOpen() {
         var mediaSource = this;
         sourceBuffer = mediaSource.addSourceBuffer(`video/mp4; codecs="avc1.64001E, mp4a.40.2"`);
@@ -52,11 +63,10 @@
             console.log('source buffer error', e);
         }
 
-        // @todo get duration from torrent manifest info
-        mediaSource.duration = 1331;
-
-        segmentFetcher = new SegmentFetcher(`/torrent/${torrentHash}/segments`, `/torrent/${torrentHash}/data`, sourceBuffer);
-        segmentFetcher.init().then(() => {
+        fetchManifest(`/torrent/${torrentHash}/manifest`).then((manifest) => {
+            mediaSource.duration = manifest.Duration;
+            segmentFetcher = new SegmentFetcher(manifest, `/torrent/${torrentHash}/data`, sourceBuffer);
+            segmentFetcher.init();
             segmentFetcher.process();
         });
     }

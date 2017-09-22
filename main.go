@@ -2,19 +2,14 @@ package main
 
 import (
 	"bytes"
-	// "encoding/json"
+	"flag"
 	"fmt"
-	"io/ioutil"
-	"time"
-	// "net/http"
 	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/metainfo"
 	bencode "github.com/jackpal/bencode-go"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
-
-	"github.com/dustin/go-humanize"
-	"github.com/gosuri/uiprogress"
+	"io/ioutil"
 )
 
 type Segment struct {
@@ -83,42 +78,6 @@ type PostTorrentResponse struct {
 	HexInfoHash string `json:"infoHash"`
 }
 
-func torrentBar(t *torrent.Torrent) {
-	bar := uiprogress.AddBar(1)
-	bar.AppendCompleted()
-	bar.AppendFunc(func(*uiprogress.Bar) (ret string) {
-		select {
-		case <-t.GotInfo():
-		default:
-			return "getting info"
-		}
-		if t.Seeding() {
-			return "seeding"
-		} else if t.BytesCompleted() == t.Info().TotalLength() {
-			return "completed"
-		} else {
-			return fmt.Sprintf("downloading (%s/%s)", humanize.Bytes(uint64(t.BytesCompleted())), humanize.Bytes(uint64(t.Info().TotalLength())))
-		}
-	})
-	bar.PrependFunc(func(*uiprogress.Bar) string {
-		return t.Name()
-	})
-	go func() {
-		<-t.GotInfo()
-		tl := int(t.Info().TotalLength())
-		if tl == 0 {
-			bar.Set(1)
-			return
-		}
-		bar.Total = tl
-		for {
-			bc := t.BytesCompleted()
-			bar.Set(int(bc))
-			time.Sleep(time.Second)
-		}
-	}()
-}
-
 func PostTorrentHandler(c echo.Context) error {
 	r := c.Request().Body
 	b, _ := ioutil.ReadAll(r)
@@ -147,7 +106,6 @@ func PostTorrentHandler(c echo.Context) error {
 
 	ts.manifestMap[h] = m.Manifest
 
-	torrentBar(t)
 	<-t.GotInfo()
 
 	resp := PostTorrentResponse{
@@ -223,6 +181,14 @@ func TorrentServiceMiddleware(ts *TorrentService) echo.MiddlewareFunc {
 			return next(c)
 		}
 	}
+}
+
+var Args struct {
+	Port int
+}
+
+func init() {
+	flag.IntVar(&Args.Port, "port", 8080, "Port to run HTTP server on")
 }
 
 func main() {

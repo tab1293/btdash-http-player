@@ -23,12 +23,22 @@
             }
         }
 
-        console.error('Returning -1 for buffered index');
+        console.warn('Returning -1 for buffered index');
         return -1;
     }
 
+    video.onseeking = () => {
+        segmentFetcher.setCurrentTime(video.currentTime);
+    }
+
     video.ontimeupdate = (e) => {
-        const bufferTime = video.buffered.end(getCurrentBufferedIndex) - video.currentTime;
+        const currIndex = getCurrentBufferedIndex();
+        if (currIndex == -1) {
+            return;
+        }
+
+        // If halted and have less than 60 seconds in the buffer, start removing time behind you
+        const bufferTime = video.buffered.end(currIndex) - video.currentTime;
         if (segmentFetcher.isHalted() && bufferTime <= 60) {
             sourceBuffer.remove(0, video.currentTime - 6);
             segmentFetcher.unhalt();
@@ -41,8 +51,9 @@
         sourceBuffer.onerror = (e) => {
             console.log('source buffer error', e);
         }
-        mediaSource.duration = 1331;
 
+        // @todo get duration from torrent manifest info
+        mediaSource.duration = 1331;
 
         segmentFetcher = new SegmentFetcher(`/torrent/${torrentHash}/segments`, `/torrent/${torrentHash}/data`, sourceBuffer);
         segmentFetcher.init().then(() => {

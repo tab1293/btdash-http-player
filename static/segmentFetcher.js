@@ -92,9 +92,30 @@ class SegmentFetcher {
     }
 
     queueNextSegmentFetch() {
-        console.log('curr index', this.currentIndex);
+        // console.log('curr index', this.currentIndex);
         this.fetchQueue.push(this.fetchAndAppend.bind(this, this.currentIndex));
         this.currentIndex++;
+    }
+
+    setCurrentTime(time) {
+        let segmentIndex = -1;
+        for (let i=0; i<this.segments.length; i++) {
+            if (time >= this.segments[i].StartTime/1000 && time <= this.segments[i].EndTime/1000) {
+                segmentIndex = i;
+                break;
+            }
+        }
+
+        if (segmentIndex != -1) {
+            this.setCurrentIndex(segmentIndex)
+        }
+    }
+
+    setCurrentIndex(index) {
+        this.halt();
+        this.fetchQueue = [];
+        this.currentIndex = index;
+        this.unhalt();
     }
 
     process() {
